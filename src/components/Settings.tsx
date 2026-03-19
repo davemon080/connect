@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { UserProfile } from '../types';
-import { firebaseService } from '../services/firebaseService';
-import { auth, updateProfile } from '../firebase';
-import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { supabaseService } from '../services/supabaseService';
+import { supabase } from '../supabase';
 import { 
   User, 
   Lock, 
@@ -45,11 +44,14 @@ export default function Settings({ profile, onLogout, onProfileUpdate }: Setting
     setLoading(true);
     setMessage(null);
     try {
-      if (auth.currentUser) {
-        await updateProfile(auth.currentUser, { displayName, photoURL });
-      }
+      await supabase.auth.updateUser({
+        data: {
+          full_name: displayName,
+          avatar_url: photoURL,
+        },
+      });
       const updatedProfile = { ...profile, displayName, bio, photoURL };
-      await firebaseService.updateUserProfile(profile.uid, { displayName, bio, photoURL });
+      await supabaseService.updateUserProfile(profile.uid, { displayName, bio, photoURL });
       onProfileUpdate(updatedProfile);
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setTimeout(() => setActiveSection('main'), 1500);
@@ -68,17 +70,20 @@ export default function Settings({ profile, onLogout, onProfileUpdate }: Setting
     setLoading(true);
     setMessage(null);
     try {
-      const user = auth.currentUser;
-      if (user && user.email) {
-        const credential = EmailAuthProvider.credential(user.email, currentPassword);
-        await reauthenticateWithCredential(user, credential);
-        await updatePassword(user, newPassword);
-        setMessage({ type: 'success', text: 'Password changed successfully!' });
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        setTimeout(() => setActiveSection('main'), 1500);
-      }
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: currentPassword,
+      });
+      if (reauthError) throw reauthError;
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+
+      setMessage({ type: 'success', text: 'Password changed successfully!' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setActiveSection('main'), 1500);
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
     } finally {

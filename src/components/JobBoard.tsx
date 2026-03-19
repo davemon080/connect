@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, Job } from '../types';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { Search, Filter, Briefcase, MapPin, DollarSign, Clock, CheckCircle, Plus, Settings } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,7 +30,7 @@ export default function JobBoard({ profile }: JobBoardProps) {
   });
 
   useEffect(() => {
-    const unsubscribe = firebaseService.subscribeToJobs(setJobs);
+    const unsubscribe = supabaseService.subscribeToJobs(setJobs);
     return () => unsubscribe();
   }, []);
 
@@ -50,7 +50,7 @@ export default function JobBoard({ profile }: JobBoardProps) {
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    await firebaseService.createJob({
+    await supabaseService.createJob({
       clientUid: profile.uid,
       ...newJob
     });

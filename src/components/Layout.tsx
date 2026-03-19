@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Home, Users, PlusSquare, Briefcase, MessageSquare, User, LogOut, Search, Settings as SettingsIcon } from 'lucide-react';
-import { User as FirebaseUser } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { UserProfile } from '../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 
 interface LayoutProps {
   children: React.ReactNode;
-  user: FirebaseUser;
+  user: User;
   profile: UserProfile;
   onLogout: () => void;
 }

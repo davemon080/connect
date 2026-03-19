@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../firebase';
 import { UserProfile, Post, Job } from '../types';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { Image, Send, Briefcase, Star, MapPin, DollarSign, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,20 +20,14 @@ export default function Feed({ profile }: FeedProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribePosts = firebaseService.subscribeToPosts(setPosts);
-    const unsubscribeJobs = firebaseService.subscribeToJobs((allJobs) => {
+    const unsubscribePosts = supabaseService.subscribeToPosts(setPosts);
+    const unsubscribeJobs = supabaseService.subscribeToJobs((allJobs) => {
       setJobs(allJobs.slice(0, 3)); // Only show top 3 in sidebar
     });
 
     // Fetch top rated students
     const fetchTopStudents = async () => {
-      const q = query(
-        collection(db, 'users'),
-        where('role', '==', 'freelancer'),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      const students = snapshot.docs.map(doc => doc.data() as UserProfile);
+      const students = await supabaseService.getTopStudents(5);
       setTopStudents(students.slice(0, 3));
     };
     fetchTopStudents();
@@ -50,7 +42,7 @@ export default function Feed({ profile }: FeedProps) {
     e.preventDefault();
     if (!newPostContent.trim()) return;
     setIsPosting(true);
-    await firebaseService.createPost({
+    await supabaseService.createPost({
       authorUid: profile.uid,
       authorName: profile.displayName,
       authorPhoto: profile.photoURL,

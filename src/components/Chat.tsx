@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { UserProfile, Message, Attachment } from '../types';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { Send, Search, MessageSquare, User, MoreVertical, Phone, Video, ArrowLeft, Check, CheckCheck, Smile, Paperclip, PlusSquare, Lock, Keyboard as KeyboardIcon, FileIcon, X, Download, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, getDocs, onSnapshot, query, orderBy, limit, Timestamp, where } from 'firebase/firestore';
-import { db } from '../firebase';
 import VirtualKeyboard from './VirtualKeyboard';
 
 interface ChatProps {
@@ -83,13 +81,9 @@ export default function Chat({ profile }: ChatProps) {
     try {
       if (!date) return new Date();
       if (date instanceof Date) return date;
-      if (date instanceof Timestamp) return date.toDate();
       if (typeof date === 'string') {
         const d = new Date(date);
         return isNaN(d.getTime()) ? new Date() : d;
-      }
-      if (date && typeof date === 'object' && date.seconds !== undefined) {
-        return new Timestamp(date.seconds, date.nanoseconds || 0).toDate();
       }
       return new Date();
     } catch (e) {
@@ -106,7 +100,7 @@ export default function Chat({ profile }: ChatProps) {
     }, 15000); // Increased timeout to 15s
 
     // Subscribe to active chats
-    const unsubscribe = firebaseService.subscribeToActiveChats(
+    const unsubscribe = supabaseService.subscribeToActiveChats(
       profile.uid, 
       (chats) => {
         clearTimeout(timeout);
@@ -147,7 +141,7 @@ export default function Chat({ profile }: ChatProps) {
       } else if (isInitialLoad.current || !selectedContact) {
         // Fetch user if not in active chats or if it's the initial load
         try {
-          const user = await firebaseService.getUserProfile(targetUid);
+          const user = await supabaseService.getUserProfile(targetUid);
           if (user) {
             setSelectedContact(user);
             setShowChatOnMobile(true);
@@ -166,22 +160,7 @@ export default function Chat({ profile }: ChatProps) {
   useEffect(() => {
     if (isNewChatModalOpen) {
       const fetchFriends = async () => {
-        // Fetch all users
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const allUsersList = usersSnapshot.docs
-          .map(doc => doc.data() as UserProfile)
-          .filter(u => u.uid !== profile.uid);
-
-        // Fetch connections
-        const connectionsQuery = query(collection(db, 'connections'), where('uids', 'array-contains', profile.uid));
-        const connectionsSnapshot = await getDocs(connectionsQuery);
-        const connectionUids = connectionsSnapshot.docs.flatMap(doc => {
-          const data = doc.data();
-          return data.uids.filter((uid: string) => uid !== profile.uid);
-        });
-
-        // Filter users to only show friends
-        const friends = allUsersList.filter(u => connectionUids.includes(u.uid));
+        const friends = await supabaseService.getFriends(profile.uid);
         setAllUsers(friends);
       };
       fetchFriends();
@@ -193,7 +172,7 @@ export default function Chat({ profile }: ChatProps) {
       setMessagesLoading(true);
       setMessagesError(null);
       
-      const unsubscribe = firebaseService.subscribeToMessages(
+      const unsubscribe = supabaseService.subscribeToMessages(
         profile.uid,
         selectedContact.uid,
         (msgs) => {
@@ -242,7 +221,7 @@ export default function Chat({ profile }: ChatProps) {
       let attachments: Attachment[] = [];
       
       if (files.length > 0) {
-        const uploadPromises = files.map(file => firebaseService.uploadFile(file));
+        const uploadPromises = files.map(file => supabaseService.uploadFile(file));
         attachments = await Promise.all(uploadPromises);
       }
 
@@ -256,7 +235,7 @@ export default function Chat({ profile }: ChatProps) {
         messageData.attachments = attachments;
       }
 
-      await firebaseService.sendMessage(messageData);
+      await supabaseService.sendMessage(messageData);
     } catch (err) {
       console.error('Error sending message:', err);
       setError(files.length > 0 ? 'Failed to send message with attachments' : 'Failed to send message');

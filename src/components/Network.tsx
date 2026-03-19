@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, query, where, updateDoc, doc, deleteDoc, onSnapshot, orderBy, limit, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { UserProfile, FriendRequest, Connection, Post } from '../types';
+import { supabaseService } from '../services/supabaseService';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, MapPin, Briefcase, Star, MessageSquare, UserPlus, Users, Bell, Check, X, Sparkles, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +12,7 @@ interface NetworkProps {
 export default function Network({ profile }: NetworkProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendRequest[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [highlights, setHighlights] = useState<Post[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,108 +23,75 @@ export default function Network({ profile }: NetworkProps) {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Fetch all users
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const allUsers = usersSnapshot.docs
-        .map(doc => doc.data() as UserProfile)
-        .filter(u => u.uid !== profile.uid);
-      setUsers(allUsers);
+      try {
+        // Fetch all users
+        const allUsers = (await supabaseService.getAllUsers()).filter(u => u.uid !== profile.uid);
+        setUsers(allUsers);
 
-      // Fetch highlights (recent posts)
-      const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(10));
-      const postsSnapshot = await getDocs(postsQuery);
-      setHighlights(postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post)));
-
-      setLoading(false);
+        // Fetch highlights (recent posts)
+        const posts = await supabaseService.getHighlights(10);
+        setHighlights(posts);
+      } catch (error) {
+        console.error("Error fetching network data:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchData();
 
     // Listen for friend requests
-    const requestsQuery = query(collection(db, 'friendRequests'), where('toUid', '==', profile.uid), where('status', '==', 'pending'));
-    const unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
-      setFriendRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FriendRequest)));
-    });
+    const unsubscribeRequests = supabaseService.subscribeToIncomingFriendRequests(
+      profile.uid,
+      (requests) => setFriendRequests(requests.filter(r => r.status === 'pending'))
+    );
 
-    // Listen for connections
-    const connectionsQuery = query(collection(db, 'connections'), where('uids', 'array-contains', profile.uid));
-    const unsubscribeConnections = onSnapshot(connectionsQuery, (snapshot) => {
-      setConnections(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Connection)));
-    });
+    const unsubscribeOutgoing = supabaseService.subscribeToOutgoingFriendRequests(
+      profile.uid,
+      (requests) => setOutgoingRequests(requests)
+    );
+
+    const unsubscribeConnections = supabaseService.subscribeToConnections(
+      profile.uid,
+      (items) => setConnections(items)
+    );
 
     return () => {
       unsubscribeRequests();
+      unsubscribeOutgoing();
       unsubscribeConnections();
     };
   }, [profile.uid]);
 
   const sendFriendRequest = async (targetUser: UserProfile) => {
-    // Check if already sent or connected
-    const alreadyConnected = connections.some(c => c.uids.includes(targetUser.uid));
-    if (alreadyConnected) return;
+    try {
+      // Check if already sent or connected
+      const alreadyConnected = connections.some(c => c.uids.includes(targetUser.uid));
+      if (alreadyConnected) return;
 
-    // Check if there's already a pending request (either way)
-    const outgoingQuery = query(
-      collection(db, 'friendRequests'), 
-      where('fromUid', '==', profile.uid), 
-      where('toUid', '==', targetUser.uid),
-      where('status', '==', 'pending')
-    );
-    const incomingQuery = query(
-      collection(db, 'friendRequests'), 
-      where('fromUid', '==', targetUser.uid), 
-      where('toUid', '==', profile.uid),
-      where('status', '==', 'pending')
-    );
+      // Check if there's already a pending request (either way)
+      const alreadyOutgoing = outgoingRequests.some(
+        r => r.toUid === targetUser.uid && r.status === 'pending'
+      );
+      const alreadyIncoming = friendRequests.some(
+        r => r.fromUid === targetUser.uid && r.status === 'pending'
+      );
+      if (alreadyOutgoing || alreadyIncoming) return;
 
-    const [outgoingSnap, incomingSnap] = await Promise.all([
-      getDocs(outgoingQuery),
-      getDocs(incomingQuery)
-    ]);
+      await supabaseService.sendFriendRequest(targetUser, profile);
 
-    if (!outgoingSnap.empty || !incomingSnap.empty) return;
-
-    await addDoc(collection(db, 'friendRequests'), {
-      fromUid: profile.uid,
-      fromName: profile.displayName,
-      fromPhoto: profile.photoURL,
-      toUid: targetUser.uid,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    });
-
-    navigate('/requests');
+      navigate('/requests');
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+    }
   };
 
   const acceptRequest = async (request: FriendRequest) => {
-    const timestamp = new Date().toISOString();
-    
-    // Update request status
-    await updateDoc(doc(db, 'friendRequests', request.id), { status: 'accepted' });
-
-    // Create connection
-    await addDoc(collection(db, 'connections'), {
-      uids: [profile.uid, request.fromUid],
-      createdAt: timestamp
-    });
-
-    // Initialize activeChats for both users so they appear in each other's chat list
-    const chatRef1 = doc(db, 'users', profile.uid, 'activeChats', request.fromUid);
-    const chatRef2 = doc(db, 'users', request.fromUid, 'activeChats', profile.uid);
-    
-    await setDoc(chatRef1, { 
-      lastMessage: 'You are now connected! Say hi.', 
-      updatedAt: timestamp 
-    }, { merge: true });
-    
-    await setDoc(chatRef2, { 
-      lastMessage: 'You are now connected! Say hi.', 
-      updatedAt: timestamp 
-    }, { merge: true });
+    await supabaseService.acceptFriendRequest(request, profile);
   };
 
   const rejectRequest = async (request: FriendRequest) => {
-    await updateDoc(doc(db, 'friendRequests', request.id), { status: 'rejected' });
+    await supabaseService.rejectFriendRequest(request.id);
   };
 
   // Algorithm: Suggest users based on skills, university, or opposite role
@@ -268,9 +235,9 @@ export default function Network({ profile }: NetworkProps) {
               <div className="grid grid-cols-2 gap-2 mt-4">
                 <button 
                   onClick={() => sendFriendRequest(user)}
-                  disabled={friendRequests.some(r => r.toUid === user.uid) || connections.some(c => c.uids.includes(user.uid))}
+                  disabled={outgoingRequests.some(r => r.toUid === user.uid && r.status === 'pending') || connections.some(c => c.uids.includes(user.uid))}
                   className={`py-2 px-3 font-bold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                    friendRequests.some(r => r.toUid === user.uid)
+                    outgoingRequests.some(r => r.toUid === user.uid && r.status === 'pending')
                       ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                       : connections.some(c => c.uids.includes(user.uid))
                       ? 'bg-teal-50 text-teal-600 cursor-default'
@@ -282,7 +249,7 @@ export default function Network({ profile }: NetworkProps) {
                       <Check size={12} />
                       Connected
                     </>
-                  ) : friendRequests.some(r => r.toUid === user.uid) ? (
+                  ) : outgoingRequests.some(r => r.toUid === user.uid && r.status === 'pending') ? (
                     'Pending'
                   ) : (
                     <>

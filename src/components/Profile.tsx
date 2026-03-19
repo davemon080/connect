@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { UserProfile, Post } from '../types';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { 
   Edit2, Check, X, MapPin, GraduationCap, Briefcase, 
   Plus, ExternalLink, Award, MessageSquare, 
@@ -10,8 +10,6 @@ import {
   Camera, Zap, Users, Calendar, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import { formatDistanceToNow } from 'date-fns';
 
 interface ProfileProps {
@@ -44,18 +42,11 @@ export default function Profile({ profile: loggedInProfile }: ProfileProps) {
       if (!uid) return;
       setLoading(true);
       try {
-        const p = await firebaseService.getUserProfile(uid);
+        const p = await supabaseService.getUserProfile(uid);
         setUserProfile(p);
         setEditData(p || {});
 
-        const postsRef = collection(db, 'posts');
-        const q = query(
-          postsRef,
-          where('authorUid', '==', uid),
-          orderBy('createdAt', 'desc')
-        );
-        const snapshot = await getDocs(q);
-        const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+        const posts = await supabaseService.getPostsByUser(uid);
         setUserPosts(posts);
       } catch (error) {
         console.error("Error fetching profile data:", error);
@@ -68,7 +59,7 @@ export default function Profile({ profile: loggedInProfile }: ProfileProps) {
 
   const handleSave = async () => {
     if (!uid) return;
-    await firebaseService.updateUserProfile(uid, editData);
+    await supabaseService.updateUserProfile(uid, editData);
     setUserProfile({ ...userProfile!, ...editData });
     setIsEditing(false);
   };
@@ -79,7 +70,7 @@ export default function Profile({ profile: loggedInProfile }: ProfileProps) {
 
   const handleSendProposal = async () => {
     if (!uid) return;
-    await firebaseService.createProposal({
+    await supabaseService.createProposal({
       freelancerUid: uid,
       jobId: 'direct_hire',
       content: proposalContent,
@@ -328,21 +319,6 @@ export default function Profile({ profile: loggedInProfile }: ProfileProps) {
 
           {/* Bio Section */}
           <div className="border-t border-gray-100 pt-6">
-            {isOwnProfile && completion < 100 && !isEditing && (
-              <div className="mb-6 p-4 bg-teal-50/50 rounded-2xl border border-teal-100">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-bold text-teal-700 uppercase tracking-widest">Profile Completion</p>
-                  <p className="text-xs font-bold text-teal-700">{completion}%</p>
-                </div>
-                <div className="h-1.5 bg-teal-100 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${completion}%` }}
-                    className="h-full bg-teal-600"
-                  />
-                </div>
-              </div>
-            )}
             <AnimatePresence mode="wait">
               {isEditing ? (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -651,6 +627,29 @@ export default function Profile({ profile: loggedInProfile }: ProfileProps) {
                     exit={{ opacity: 0, y: -20 }}
                     className="space-y-10"
                   >
+                    {/* Profile Completion Bar */}
+                    {isOwnProfile && completion < 100 && (
+                      <div className="mb-8 p-6 bg-teal-50/50 rounded-3xl border border-teal-100 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <p className="text-xs font-bold text-teal-700 uppercase tracking-widest mb-1">Profile Completion</p>
+                            <p className="text-[10px] text-teal-600/70 font-medium">Complete your profile to stand out to clients and peers</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xl font-black text-teal-700">{completion}%</p>
+                          </div>
+                        </div>
+                        <div className="h-2.5 bg-teal-100 rounded-full overflow-hidden shadow-inner">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${completion}%` }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                            className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 shadow-sm"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <section>
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3">

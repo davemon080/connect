@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { User as FirebaseUser } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { UserProfile, UserRole } from '../types';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { Briefcase, UserCheck, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface OnboardingProps {
-  user: FirebaseUser;
+  user: User;
   onComplete: (profile: UserProfile) => void;
 }
 
@@ -18,10 +18,10 @@ export default function Onboarding({ user, onComplete }: OnboardingProps) {
     if (!role) return;
     setLoading(true);
     const profile: UserProfile = {
-      uid: user.uid,
+      uid: user.id,
       email: user.email || '',
-      displayName: user.displayName || 'Anonymous',
-      photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`,
+      displayName: user.user_metadata?.full_name || user.user_metadata?.name || 'Anonymous',
+      photoURL: user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.user_metadata?.full_name || 'Anonymous'}`,
       role,
       bio: '',
       skills: [],
@@ -36,7 +36,7 @@ export default function Onboarding({ user, onComplete }: OnboardingProps) {
         about: ''
       }
     };
-    await firebaseService.createUserProfile(profile);
+    await supabaseService.createUserProfile(profile);
     onComplete(profile);
     setLoading(false);
   };

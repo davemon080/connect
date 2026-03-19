@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged, signInWithPopup, signOut, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth, googleProvider } from './firebase';
-import { firebaseService } from './services/firebaseService';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
+import { supabaseService } from './services/supabaseService';
 import { UserProfile } from './types';
 import { Mail, Lock, User as UserIcon, LogIn, UserPlus } from 'lucide-react';
 
@@ -29,11 +29,14 @@ export default function App() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
+    let active = true;
+
+    const loadProfile = async (sessionUser: User | null) => {
+      if (!active) return;
+      setUser(sessionUser);
+      if (sessionUser) {
         try {
-          const userProfile = await firebaseService.getUserProfile(user.uid);
+          const userProfile = await supabaseService.getUserProfile(sessionUser.id);
           setProfile(userProfile);
         } catch (err) {
           console.error('Error fetching profile:', err);
@@ -42,17 +45,35 @@ export default function App() {
         setProfile(null);
       }
       setLoading(false);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      loadProfile(data.session?.user ?? null);
     });
-    return () => unsubscribe();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadProfile(session?.user ?? null);
+    });
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const handleGoogleLogin = async () => {
     try {
       setError('');
-      await signInWithPopup(auth, googleProvider);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) {
+        setError(error.message);
+      }
     } catch (error: any) {
       console.error('Login error:', error);
-      setError(error.message);
+      setError(error.message || 'Login failed. Please try again.');
     }
   };
 
@@ -61,11 +82,22 @@ export default function App() {
     setError('');
     try {
       if (authMode === 'register') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName });
-        // Profile will be null, triggering onboarding
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: displayName,
+            },
+          },
+        });
+        if (error) throw error;
+        if (!data.session) {
+          setError('Check your email to confirm your account before signing in.');
+        }
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
       }
     } catch (error: any) {
       console.error('Auth error:', error);
@@ -74,7 +106,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
   };
 
   if (loading) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { UserProfile, Job, Proposal } from '../types';
 import { Briefcase, Clock, DollarSign, MapPin, Trash2, CheckCircle2, XCircle, ChevronRight, Users, ArrowLeft, MoreVertical, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,7 +22,7 @@ export default function ManageGigs({ profile }: ManageGigsProps) {
       return;
     }
 
-    const unsubJobs = firebaseService.subscribeToClientJobs(profile.uid, (clientJobs) => {
+    const unsubJobs = supabaseService.subscribeToClientJobs(profile.uid, (clientJobs) => {
       setJobs(clientJobs);
       setLoading(false);
     });
@@ -32,7 +32,7 @@ export default function ManageGigs({ profile }: ManageGigsProps) {
 
   useEffect(() => {
     if (selectedJob) {
-      const unsubProposals = firebaseService.subscribeToJobProposals(selectedJob.id, (jobProposals) => {
+      const unsubProposals = supabaseService.subscribeToJobProposals(selectedJob.id, (jobProposals) => {
         setProposals(jobProposals);
       });
       return () => unsubProposals();
@@ -44,7 +44,7 @@ export default function ManageGigs({ profile }: ManageGigsProps) {
   const handleToggleStatus = async (job: Job) => {
     const newStatus = job.status === 'open' ? 'closed' : 'open';
     try {
-      await firebaseService.updateJobStatus(job.id, newStatus);
+      await supabaseService.updateJobStatus(job.id, newStatus);
     } catch (error) {
       console.error('Error updating job status:', error);
     }
@@ -53,7 +53,7 @@ export default function ManageGigs({ profile }: ManageGigsProps) {
   const handleDeleteJob = async (jobId: string) => {
     if (window.confirm('Are you sure you want to delete this gig? This action cannot be undone.')) {
       try {
-        await firebaseService.deleteJob(jobId);
+        await supabaseService.deleteJob(jobId);
         if (selectedJob?.id === jobId) setSelectedJob(null);
       } catch (error) {
         console.error('Error deleting job:', error);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService } from '../services/supabaseService';
 import { UserProfile, FriendRequest } from '../types';
 import { Check, X, Clock, UserPlus, ArrowLeft, UserCheck, UserX, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,12 +17,12 @@ export default function FriendRequests({ profile }: FriendRequestsProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubIncoming = firebaseService.subscribeToIncomingFriendRequests(profile.uid, (requests) => {
+    const unsubIncoming = supabaseService.subscribeToIncomingFriendRequests(profile.uid, (requests) => {
       setIncomingRequests(requests);
       if (loading) setLoading(false);
     });
 
-    const unsubOutgoing = firebaseService.subscribeToOutgoingFriendRequests(profile.uid, (requests) => {
+    const unsubOutgoing = supabaseService.subscribeToOutgoingFriendRequests(profile.uid, (requests) => {
       setOutgoingRequests(requests);
     });
 
@@ -34,7 +34,7 @@ export default function FriendRequests({ profile }: FriendRequestsProps) {
 
   const handleAccept = async (request: FriendRequest) => {
     try {
-      await firebaseService.acceptFriendRequest(request, profile);
+      await supabaseService.acceptFriendRequest(request, profile);
     } catch (error) {
       console.error('Error accepting request:', error);
     }
@@ -42,7 +42,7 @@ export default function FriendRequests({ profile }: FriendRequestsProps) {
 
   const handleReject = async (request: FriendRequest) => {
     try {
-      await firebaseService.rejectFriendRequest(request.id);
+      await supabaseService.rejectFriendRequest(request.id);
     } catch (error) {
       console.error('Error rejecting request:', error);
     }
@@ -50,7 +50,7 @@ export default function FriendRequests({ profile }: FriendRequestsProps) {
 
   const handleCancel = async (requestId: string) => {
     try {
-      await firebaseService.deleteFriendRequest(requestId);
+      await supabaseService.deleteFriendRequest(requestId);
     } catch (error) {
       console.error('Error canceling request:', error);
     }
