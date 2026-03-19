@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information for freelancers, clients, and admins.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["freelancer", "client", "admin"] },
+        "bio": { "type": "string" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "education": {
+          "type": "object",
+          "properties": {
+            "university": { "type": "string" },
+            "degree": { "type": "string" },
+            "verified": { "type": "boolean" }
+          }
+        },
+        "portfolio": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "imageUrl": { "type": "string" },
+              "link": { "type": "string" }
+            }
+          }
+        },
+        "companyInfo": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "about": { "type": "string" }
+          }
+        }
+      },
+      "required": ["uid", "email", "role", "displayName"]
+    },
+    "ActiveChat": {
+      "title": "ActiveChat",
+      "description": "Summary of an active conversation.",
+      "type": "object",
+      "properties": {
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["lastMessage", "updatedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Social updates and job highlights in the feed.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "type": { "type": "string", "enum": ["social", "job"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "content", "type", "createdAt"]
+    },
+    "Job": {
+      "title": "Job",
+      "description": "Freelance gig listings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientUid": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "budget": { "type": "number" },
+        "category": { "type": "string" },
+        "isStudentFriendly": { "type": "boolean" },
+        "isRemote": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientUid", "title", "description", "budget", "createdAt"]
+    },
+    "Attachment": {
+      "title": "Attachment",
+      "description": "File attachment metadata.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string" },
+        "size": { "type": "number" }
+      },
+      "required": ["name", "url", "type", "size"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Real-time chat messages.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderUid": { "type": "string" },
+        "receiverUid": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "attachments": { "type": "array", "items": { "$ref": "Attachment" } }
+      },
+      "required": ["senderUid", "receiverUid", "createdAt"]
+    },
+    "Proposal": {
+      "title": "Proposal",
+      "description": "Freelancer proposals for jobs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerUid": { "type": "string" },
+        "jobId": { "type": "string" },
+        "content": { "type": "string" },
+        "budget": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["freelancerUid", "jobId", "content", "budget", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profiles" },
+    "/users/{uid}/activeChats/{otherUid}": { "schema": "ActiveChat", "description": "Active chat summaries" },
+    "/posts/{postId}": { "schema": "Post", "description": "Feed posts" },
+    "/jobs/{jobId}": { "schema": "Job", "description": "Job listings" },
+    "/messages/{messageId}": { "schema": "Message", "description": "Chat messages" },
+    "/proposals/{proposalId}": { "schema": "Proposal", "description": "Job proposals" }
+  }
+}

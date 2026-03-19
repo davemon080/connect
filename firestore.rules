@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string (required)
+    //   - role: string (required, ['freelancer', 'client', 'admin'])
+    //   - bio: string (optional)
+    //   - skills: list (optional)
+    //   - photoURL: string (optional)
+    //
+    // Subcollection: users/{uid}/activeChats
+    // Document ID: {otherUid}
+    // Fields:
+    //   - lastMessage: string
+    //   - updatedAt: string (ISO date)
+    //
+    // Collection: messages
+    // Document ID: auto-generated
+    // Fields:
+    //   - senderUid: string (required)
+    //   - receiverUid: string (required)
+    //   - content: string (optional if attachments present)
+    //   - createdAt: string (required, ISO date)
+    //   - attachments: list (optional, list of {name, url, type, size})
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "simonodavido@gmail.com" && request.auth.token.email_verified == true));
+    }
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.uid is string && 
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['freelancer', 'client', 'admin'] &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100;
+    }
+    function isValidPost(data) {
+      return data.authorUid is string && data.content is string && data.type in ['social', 'job'];
+    }
+    function isValidJob(data) {
+      return data.clientUid is string && data.title is string && data.budget is number;
+    }
+    function isValidMessage(data) {
+      return data.senderUid is string && 
+             data.receiverUid is string && 
+             (data.content is string || ('attachments' in data && data.attachments is list)) &&
+             (!('content' in data) || (data.content is string && data.content.size() < 5000)) &&
+             (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 10));
+    }
+    function isValidProposal(data) {
+      return data.freelancerUid is string && data.jobId is string && data.budget is number;
+    }
+    function isValidActiveChat(data) {
+      return data.lastMessage is string && data.lastMessage.size() < 5000 &&
+             isValidDateString(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+
+      match /activeChats/{otherUid} {
+        // Explicitly allow read (get and list) for the owner of the chat list
+        allow read: if isAuthenticated() && request.auth.uid == uid;
+        
+        // Allow write if you are the owner or the other participant sending a message
+        allow write: if isAuthenticated() && 
+                     (request.auth.uid == uid || request.auth.uid == otherUid) &&
+                     isValidActiveChat(request.resource.data);
+      }
+    }
+
+    match /posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.authorUid == request.auth.uid && isValidPost(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.authorUid == request.auth.uid && isValidPost(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.authorUid == request.auth.uid || isAdmin());
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.clientUid == request.auth.uid && isValidJob(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.clientUid == request.auth.uid && isValidJob(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.clientUid == request.auth.uid || isAdmin());
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (resource.data.senderUid == request.auth.uid || resource.data.receiverUid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.senderUid == request.auth.uid && isValidMessage(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    match /proposals/{proposalId} {
+      allow read: if isAuthenticated() && (resource.data.freelancerUid == request.auth.uid || get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.clientUid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.freelancerUid == request.auth.uid && isValidProposal(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.freelancerUid == request.auth.uid || get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.clientUid == request.auth.uid || isAdmin());
+    }
+    
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
